@@ -1,0 +1,112 @@
+---
+title: "Life Expectancy - Collinearity and Variable Selection"
+author: "Kasia Krueger"
+date: "10/15/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('car')
+library('olsrr')
+#library('rgl')
+setwd("~/Personal/School/MA4710/Project")
+lifedata <- read.csv("Life Expectancy Data_2015.csv",row.names=1)
+
+polio.vacc <- lifedata$Polio
+lifedata$polio.vacc <- cut(polio.vacc,3,labels = c("1", "2", "3"))
+
+HIV.AIDS <- as.numeric(lifedata$HIV.AIDS)  
+lifedata$HIV.AIDS<- cut(HIV.AIDS,3,labels = c("1", "2", "3"))
+
+```
+
+
+
+# Week 7
+
+## Cleaning up data
+Removing high influential points (errors in years of schooling as found in Week 3 Regression diagnostics.)
+```{r}
+lifedata <- lifedata[-which(rownames(lifedata) == "Burkina Faso"),] 
+#Possible error in years of schooling (26)
+lifedata <- lifedata[-which(rownames(lifedata) == "Equatorial Guinea"),] 
+#Possible error in years of schooling (32)
+lifedata <- lifedata[-which(rownames(lifedata) == "Cuba"),] 
+#Error in years of schooling (92)
+lifedata <- lifedata[-which(rownames(lifedata) == "Eritrea"),] 
+# Error in years of schooling (255)
+lifedata <- lifedata[-which(rownames(lifedata) == "India"),] 
+#High cook's distance + possible error in infant deaths (800/1000)
+```
+
+```{r}
+lifedata$polio.vacc <- as.factor(lifedata$polio.vacc)
+lifedata$HIV.AIDS <- as.factor(lifedata$HIV.AIDS)
+lifedata$Status <- as.factor(lifedata$Status)
+
+levels(lifedata$polio.vacc) <- c('low', 'medium', 'high')
+levels(lifedata$HIV.AIDS) <- c('low', 'medium', 'high')
+```
+
+## Base Model 
+```{r}
+life.lm <- lm(Life.expectancy ~ Adult.Mortality 
+              + Schooling 
+              + BMI + GDP 
+              + infant.deaths 
+              + polio.vacc 
+              + HIV.AIDS 
+              + Status, lifedata)
+
+
+summary(life.lm)
+
+```
+
+
+```
+# Calculate VIFS
+```{r}
+car::vif(life.lm)
+```
+
+
+# Condition number
+```{r}
+life.pc <- prcomp(~ Adult.Mortality 
+              + Schooling 
+              + BMI 
+              + GDP 
+              + infant.deaths 
+              - Life.expectancy, lifedata, scale=TRUE)
+PC.sdev <- life.pc$sdev
+PC.sdev[1] / PC.sdev
+```
+
+The base model did not detect any issues with collinearity. Next, we explore this topic more during the variable selection process. 
+
+#Stepwise
+```{r}
+
+step(life.lm, direction='both')
+step(life.lm, direction='both', k=log(nrow(lifedata)))
+
+life.mod <- lm(formula = Life.expectancy ~ Adult.Mortality + Schooling + polio.vacc, data = lifedata)
+summary(life.mod)
+vif(life.mod)
+residualPlots(life.mod, quadratic=FALSE, id=TRUE)
+
+life.rs <- regsubsets(Life.expectancy ~ Adult.Mortality 
+              + Schooling 
+              + BMI + GDP 
+              + infant.deaths 
+              + polio.vacc 
+              + HIV.AIDS 
+              + Status, lifedata, nbest=3, nvmax=11)
+              
+plot(life.rs, scale='adjr2')
+              
+```
+
+

@@ -1,0 +1,349 @@
+---
+title: "Life Expectancy - Collinearity and Variable Selection"
+author: "Kasia Krueger"
+date: "10/15/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('car')
+library('olsrr')
+#library('rgl')
+setwd("~/Personal/School/MA4710/Project")
+lifedata <- read.csv("Life Expectancy Data_2015.csv",row.names=1)
+
+polio.vacc <- lifedata$Polio
+lifedata$polio.vacc <- cut(polio.vacc,3,labels = c("1", "2", "3"))
+
+HIV.AIDS <- as.numeric(lifedata$HIV.AIDS)  
+lifedata$HIV.AIDS<- cut(HIV.AIDS,3,labels = c("1", "2", "3"))
+
+```
+
+
+
+# Week 7
+
+## Cleaning up data
+Removing high influential points (errors in years of schooling as found in Week 3 Regression diagnostics.)
+```{r}
+lifedata <- lifedata[-which(rownames(lifedata) == "Burkina Faso"),] 
+#Possible error in years of schooling (26)
+lifedata <- lifedata[-which(rownames(lifedata) == "Equatorial Guinea"),] 
+#Possible error in years of schooling (32)
+lifedata <- lifedata[-which(rownames(lifedata) == "Cuba"),] 
+#Error in years of schooling (92)
+lifedata <- lifedata[-which(rownames(lifedata) == "Eritrea"),] 
+# Error in years of schooling (255)
+lifedata <- lifedata[-which(rownames(lifedata) == "India"),] 
+#High cook's distance + possible error in infant deaths (800/1000)
+```
+
+```{r}
+lifedata$polio.vacc <- as.factor(lifedata$polio.vacc)
+lifedata$HIV.AIDS <- as.factor(lifedata$HIV.AIDS)
+lifedata$Status <- as.factor(lifedata$Status)
+
+levels(lifedata$polio.vacc) <- c('low', 'medium', 'high')
+levels(lifedata$HIV.AIDS) <- c('low', 'medium', 'high')
+```
+
+# Full Model 
+```{r}
+life.lm <- lm(Life.expectancy ~ Adult.Mortality 
+              + Schooling 
+              + BMI + GDP 
+              + infant.deaths 
+              + polio.vacc 
+              + HIV.AIDS 
+              + Status, lifedata)
+
+
+summary(life.lm)
+summary(life.lm)$sigma
+```
+
+
+## Calculate VIFS
+```{r}
+car::vif(life.lm)
+```
+
+
+## Condition number
+```{r}
+life.pc <- prcomp(~ Adult.Mortality 
+              + Schooling 
+              + BMI 
+              + GDP 
+              + infant.deaths 
+              - Life.expectancy, lifedata, scale=TRUE)
+PC.sdev <- life.pc$sdev
+PC.sdev[1] / PC.sdev
+```
+
+# Summary: Collinearity in Full Model
+The full model did not detect any issues with collinearity. Next, we explore this topic more during the variable selection process. 
+
+# Best p-Variable Models
+```{r}
+life.rs <- leaps::regsubsets(Life.expectancy ~ Adult.Mortality 
+              + Schooling 
+              + BMI + GDP 
+              + infant.deaths 
+              + polio.vacc 
+              + HIV.AIDS 
+              + Status, lifedata)
+              
+summary(life.rs)
+
+```
+* Best 1-variable model is Y = $\beta_0$+$\beta_2$$X_2$
+* Best 2-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$
+* Best 3-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$
+* Best 4-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$ + $\beta_{10}$$X_{10}$
+* Best 5-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_{10}$$X_{10}$
+* Best 6-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_{10}$$X_{10}$
+* Best 7-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_9$$X_9$ + $\beta_{10}$$X_{10}$
+* Best 8-variable model is Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_3$$X_3$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_9$$X_9$ + $\beta_{10}$$X_{10}$
+
+## Patterns:  
+
+* $X_2$ *Schooling* is in all the models.
+* $X_1$ *Adult Mortality* is in all the models containing two or more variables.
+* $X_7$ *Polio Vaccine - High* is in all the models containing three or more variables.
+* $X_{10}$ *Status - Developing* is in all the models containing four or more variables.
+
+# Forward selection, backward elimination, and stepwise selection
+
+## Forward AIC
+```{r}
+mod.null <- lm(Life.expectancy ~ 1, lifedata) # null model with no predictors
+step(mod.null, scope=formula(life.lm), direction='forward', trace=FALSE)
+```
+
+* The best model using Forward AIC is 
+Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ +  $\beta_9$$X_9$ + $\beta_{10}$$X_{10}$
+
+## Backward AIC
+```{r}
+step(life.lm, direction='backward', trace=FALSE)
+```
+
+* The best model using Backward AIC is 
+Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ +  $\beta_9$$X_9$ + $\beta_{10}$$X_{10}$
+
+## Stepwise AIC
+```{r}
+step(life.lm, direction='both', trace=FALSE)
+```
+
+* The best model using Stepwise AIC is 
+Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ +  $\beta_9$$X_9$ + $\beta_{10}$$X_{10}$
+
+All three methods produced the same model but it seems overfit. This process will be repeated using stepwise elimination with BIC, which has a strong penalty associated with addin too many terms. 
+
+## Forward BIC
+```{r}
+mod.null <- lm(Life.expectancy ~ 1, lifedata) # null model with no predictors
+step(mod.null, scope=formula(life.lm), direction='forward', trace=FALSE, k=log(nrow(lifedata)))
+```
+
+* The best model using Forward BIC is 
+Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ +  $\beta_7$$X_7$ + $\beta_8$$X_8$ 
+
+## Backward BIC
+```{r}
+step(life.lm, direction='backward', trace=FALSE, k=log(nrow(lifedata)))
+```
+* The best model using Backward BIC is 
+Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ +  $\beta_7$$X_7$ + $\beta_8$$X_8$ 
+
+## Stepwise BIC
+```{r}
+step(life.lm, direction='both', trace=FALSE, k=log(nrow(lifedata)))
+```
+* The best model using Stepwise BIC is 
+Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ +  $\beta_7$$X_7$ + $\beta_8$$X_8$ 
+
+Again, all three methods produced the same model but with fewer predictors/variables using the BIC criteria.  
+
+# Best subsets model selection
+```{r}
+par(mfrow=c(1,2))
+plot(life.rs)
+plot(life.rs, scale='adjr2')
+plot(life.rs, scale='Cp')
+```
+
+* The model with lowest BIC: Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$  
+* The model with highest R^2^_adj_: Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_4$$X_4$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_{10}$$X_{10}$  
+* The model with lowest C{p}: Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_{10}$$X_{10}$
+
+```{r}
+subsets(life.rs, statistic='adjr2',  ylim=c(.8,.86), min.size=2, legend=FALSE)
+
+subsets(life.rs, statistic='cp', xlim=c(3,8), ylim=c(4.5,8), min.size=2, legend=FALSE)
+abline(a=1, b=1, col='red', lty='dashed', lwd=2)
+```
+## Summary: Subsets
+
+The R^2^_adj_ plot is difficult to interpret, since many of the models have R^2^_adj_ from 0.83-0.85, as seen in the  _plot_ for R^2^_adj_.
+
+From the cp plot, the first model which crosses below the reference line is also the model with the lowest C{p}: Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$ + $\beta_8$$X_8$ + $\beta_{10}$$X_{10}$
+
+# Variable selection procedures
+
+## Lowest Cp Model
+Using the model with the lowest C{p}:
+```{r}
+life_cp <- lm(Life.expectancy ~ 
+            Adult.Mortality
+              + Schooling 
+              + polio.vacc
+              + HIV.AIDS 
+              + Status, lifedata)
+              
+summary(life_cp) 
+summary(life_cp)$sigma
+
+```
+
+
+
+```{r}
+vif(life_cp)
+
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(life_cp)
+
+```
+
+
+```{r}
+res.cp <- rstandard(life_cp)
+shapiro.test(res.cp)
+car::ncvTest(life_cp)
+par(mfrow=c(1,1))
+hist(res.cp)
+residualPlots(life_cp, type='rstandard', quadratic=FALSE)
+
+```
+## Summary: Lowest Cp Model 
+
+The summary statistics look good, with most predictors being influential and a R^2^_adj_ of 0.8435 and sigma of 3.27.There are no issues with collinearity as all VIFs are less than 10. 
+
+The plots do not indiate any issues with normality, lineairtiy or homoscedasticity. There is one influential point (Zambia). 
+
+The Breusch-Pagan test indicates there is an issue with heteroscadisity that was not seen in the plots. The histogram of residuals is unfortunately left-skewed, with some high outliers. 
+
+## Lowest BIC Model
+
+Next we will try using the model (tied) with lowest BIC: Y = $\beta_0$ + $\beta_1$$X_1$ + $\beta_2$$X_2$ + $\beta_7$$X_7$ + $\beta_{10}$$X_{10}$ 
+```{r}
+ 
+life_BIC <- lm(Life.expectancy ~ 
+               Adult.Mortality
+              + Schooling 
+              + polio.vacc
+              + Status, lifedata)
+              
+summary(life_BIC) 
+summary(life_BIC)$sigma 
+par(mfrow=c(2,2))
+plot(life_BIC)
+res.BIC <- rstandard(life_BIC)
+shapiro.test(res.BIC)
+car::ncvTest(life_BIC)
+par(mfrow=c(1,1))
+hist(res.BIC)
+residualPlots(life_BIC, type='rstandard', quadratic=FALSE)
+
+```
+## Summary: Lowest BIC Model 
+
+The summary statistics look good, with most predictors being influential and a R^2^_adj_ of 0.8416 and sigma of 3.99. 
+
+The Breusch-Pagan test improved significantly, as did the influntial point (Zambia), which has moved back under a Cook's distance of 0.5. 
+
+The histogram of residuals has improved with fewer outliers, but still appears slightly left-skewed.  
+
+## Lowest BIC Model with Quadratic Transformation
+
+Next we will try using the same model with the lowest BIC, but with a quadratic predictor: Y = $\beta_0$ + $\beta_1$$X_1^2$ + $\beta_2$$X_2$ + $\beta_7$$X_7$ + $\beta_{10}$$X_{10}$ 
+```{r}
+ 
+life_BIC2 <- lm(Life.expectancy ~ 
+               Adult.Mortality^2
+              + Schooling 
+              + polio.vacc
+              + Status, lifedata)
+              
+summary(life_BIC2)
+summary(life_BIC2)$sigma
+par(mfrow=c(2,2))
+plot(life_BIC2)
+res.BIC2 <- rstandard(life_BIC2)
+shapiro.test(res.BIC2)
+car::ncvTest(life_BIC2)
+par(mfrow=c(1,1))
+hist(res.BIC2)
+residualPlots(life_BIC2, type='rstandard', quadratic=FALSE)
+```
+
+## Summary: Lowest BIC Model with Quadratic Transformation 
+
+The residuals have improved a bit but there are still some significant outliers in the histogram of residuals (>|3|). Sigma has improved a bit to 3.35. Adding in some interaction terms like in Week 4 could help improve the model even further.
+
+# Final model
+
+Using the lowest BIC model coefficients, along with transformations and interactions found previously to further explore the "best" model for this data. 
+
+```{r}
+life.final <- lm(Life.expectancy ~ 
+I(Adult.Mortality^2) 
++ Schooling 
++ I(Adult.Mortality^2):Status 
++ I(Adult.Mortality^2):HIV.AIDS 
++ Schooling:polio.vacc 
++ Schooling:Status 
++ Schooling:HIV.AIDS,
+data = lifedata)
+               
+summary(life.final)
+summary(life.final)$sigma
+par(mfrow=c(2,2))
+plot(life.final)
+res.final <- rstandard(life.final)
+shapiro.test(res.final)
+car::ncvTest(life.final)
+par(mfrow=c(1,1))
+hist(res.final)
+residualPlots(life.final, type='rstandard', quadratic=FALSE)
+influencePlot(life.final)
+
+```
+# Summary: Final Model 
+
+Y = $\beta_0$ 
++ $\beta_1$$X_1^2$ 
++ $\beta_2$$X_2$ 
++ $\beta_1$$X_1^2$:$\beta_{10}$$X_{10}$
++ $\beta_1$$X_1^2$:$\beta_{8}$$X_{8}$
++ $\beta_1$$X_1^2$:$\beta_{9}$$X_{9}$
++ $\beta_2$$X_2$*$\beta_{6}$$X_{7}$
++ $\beta_2$$X_2$*$\beta_{7}$$X_{7}$
++ $\beta_2$$X_2$*$\beta_{10}$$X_{10}$
++ $\beta_2$$X_2$*$\beta_{8}$$X_{8}$
++ $\beta_2$$X_2$*$\beta_{9}$$X_{9}$
+
+The final model using the lowest BIC as well as the transformations and interactions from Week 5 produced the best results yet. It produced the highest R^2^_adj_ value yet: 0.8882, and lowest sigma yet: 2.78. 
+
+Most interestingly is that the model includes the variables most commonly found in the best p-variable models observed during the variable selection procedures. The variables that occurred most often in the models ($X_2$ *Schooling*, $X_1$ *Adult Mortality*, $X_7$ *Polio Vaccine - High*, and $X_{10}$ *Status - Developing*) are all predictors used in the final model.
+
+The assumptions for the residuals in the final model are also the best found in the 7 weeks of the course. The Breusch-Pagan test indicates homoscedasticity is met, and the normality assumption is met using the Shapiro-Wilk test. The linearity assumption is met; the only influential point is "Zambia" but it does not appear to be an outlier

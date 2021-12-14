@@ -1,0 +1,184 @@
+---
+title: "Life Expectancy - Regression Diagnostics"
+author: "Kasia Krueger"
+date: "9/22/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('car')
+library('olsrr')
+library("rgl")
+setwd("~/Personal/School/MA4710/Project")
+lifedata <- read.csv("Life Expectancy Data_2015.csv",row.names=1)
+polio.vacc <- lifedata$Polio
+lifedata$polio.vacc <- cut(polio.vacc,3,labels = c("low", "medium", "high"))
+
+hepB.vacc <- lifedata$Hepatitis.B
+lifedata$hepB.vacc <- cut(hepB.vacc,3,labels = c("low", "medium", "high"))
+
+HIV.AIDS <- lifedata$HIV.AIDS  
+lifedata$HIV.AIDS<- cut(HIV.AIDS,3,labels = c("low", "medium", "high"))
+
+```
+
+## Week 3
+# Programming Assignment
+
+```{r}
+life_lm <- lm(Life.expectancy ~ Adult.Mortality+BMI+GDP+Schooling+infant.deaths, lifedata)
+```
+
+# 1. Hat matrix (projection matrix) using matrix algebra
+
+```{r results='markup'}
+X <- model.matrix(life_lm) # obtain the design matrix
+P <- X %*% solve(crossprod(X)) %*% t(X) #
+leverage <- diag(P)
+```
+Countries with lowest and highest leverages:
+```{r}
+sort(leverage)[c(1,2,172,173)]
+```
+
+
+# 2. Scatterplot matrix of response and five predictor variables
+
+```{r}
+scatterplotMatrix(~Adult.Mortality+BMI+GDP+Schooling+infant.deaths, lifedata, smooth=FALSE)
+summary(life_lm)
+```
+
+# 3. Normal q-q plot and Shapiro-Wilk test of the standardized residuals
+```{r}
+res <- rstandard(life_lm) # standardized residuals
+plot(life_lm, which=2)
+shapiro.test(res)
+```
+The plots are suggestive of the presence of some rather severe outliers, so that the normality assumption is not warranted. Also, the p-value in the Shapiro-Wilk test is only  0.003494; this small value indicates that the observed sample (of standardized residuals) is rather unlikely to occur by sheer chance if indeed the null hypothesis of a normal population is true.
+
+# 4. Plot of the standardized residuals against the fitted values
+```{r}
+e <- resid(life_lm)
+plot(e~fitted(life_lm))
+```
+
+# 5. Plot of the standardized residuals against each of the predictor variables
+```{r}
+residualPlots(life_lm, id=TRUE, quadratic=FALSE, type='rstandard', tests=FALSE)
+```
+
+# 6. Location-spread plot
+```{r}
+plot(life_lm, which=3)
+```
+
+# 7.Residual-leverage plot
+```{r}
+plot(life_lm, which=5)
+```
+
+# 8. Index plot of cook's distance
+```{r}
+plot(life_lm, which=4)
+```
+
+# 9. Index plot of DFFITS
+```{r}
+ols_plot_dffits(life_lm)
+lifedata[c(49, 71, 115, 141,172), ]
+```
+
+# 10. Panel of index plots of DFBETAS
+```{r}
+dfbetas(life_lm)[71,]
+dfbetasPlots(life_lm, id.n=4)
+```
+
+# 11. Panel of residual plus component plots
+```{r}
+crPlots(life_lm, id=TRUE)
+```
+
+# Report Assignment
+
+# 1. Interpretation of the scatterplot matrix:
+The individual scatterplots of the response *Life Expectancy* with predictors Adult Mortality, BMI, GDP, Years of schooling, and infant mortality show that linear relationships and correlations exist for many of the predictors; however, the summary function shows that only adult mortality and years of schooling are significant. 
+
+# 2. Assessment of the normality assumption:
+
+```{r include=FALSE}
+plot(life_lm, which=2)
+
+```
+
+The population is not normal according to the Shapiro-Wilk test, p-value: 0.003494. Removing the significant outliers (Equatorial Guinea, Angola, and Zambia) increases the p-value significantly [0.712] and improves the normality assumption. 
+```{r include=FALSE}
+life2 <- lifedata
+life2 <- life2[-which(rownames(life2) == "Zambia"),]
+life2 <- life2[-which(rownames(life2) == "Equatorial Guinea"),]
+life2 <- life2[-which(rownames(life2) == "Angola"),]
+life_lm2 <- lm(Life.expectancy ~ Adult.Mortality + BMI + GDP + 
+                 Schooling + infant.deaths, life2)
+res2 <- rstandard(life_lm2) # standardized residuals
+```
+```{r}
+plot(life_lm2, which=2)
+shapiro.test(res2)
+```
+
+# 3. Assessment of the linearity assumption:
+
+```{r}
+plot(life_lm, which=3)
+```
+
+The scale-location plot looks fairly linear -- there are no patterns where the standardized residuals increase with the fitted values or funnels, and the reference line is fairy horizontal. 
+
+# 4. Assessment of the homoscedasticity assumption:
+```{r}
+plot(e~fitted(life_lm))
+
+residualPlots(life_lm, id=TRUE, quadratic=FALSE, type="rstandard", tests=FALSE)
+
+```
+The  standardized residuals against the fitted values plot appear to be even distributed over zero -- there are no patterns where the standardized residuals increase with the fitted values or funnels. The exception is for the infant deaths and GDP, which appears to have funnels.  
+
+# 5. List of points which appear to be outliers or high-leverage points
+## Outliers
+The normal q-q plot shows Angola, Equatorial Guinea, and Zambia to have residuals outliers
+The scale-location plot shows Angola, Equatorial Guinea, and Zambia to have residual outliers. 
+
+## Leverage  
+**Cook's distance** -  measures the influence of an observation on the entire set of fitted values: Equatorial Guinea, India, and Nigeria  
+**DFFITS** - measures the influence of an observation on an individual fitted value: India, Nigeria, Slovenia, Zambia
+
+
+# 6. List of points which appear to be influential points
+
+## Influence
+**DFBETAS** - measures the influence of an observation on an individual regression coefficient. The table below summarizes the countries with highest leverage points for each of the regression coefficients from the DFBETAS plots:
+
+Regression coefficient| Countries                                       | High Influence Points
+-------------         | -------------                                   | -------------  
+Adult Mortality       | Equatorial Guinea, Angola, Burkina Faso, Zambia | `r lifedata[c(49,4,26,172),4]`   
+BMI                   | Sao Tome and Principe, Zambia, Cyprus, Slovenia | `r lifedata[c(133,172,42,141),4]`   
+GDP                   | Bahamas, Japan, Sao Tome and Principe, Australia | `r lifedata[c(11,79,133,8),4]`    
+Schooling             | Burkina Faso, Equatorial Guinea, Cuba, Eritrea   | `r lifedata[c(26,49,41,50),4]`    
+Infant mortality      | India, Pakistan, Nigeria, Eritrea   | `r lifedata[c(71,118,115,50),4]`
+
+There appears to be an error when looking at the data for *Years of Schooling* high influence points. It is unlikely that there exists 26, 32, and certainly not 92 and 255 average years of schooling in these countries. 
+
+# 7. Interpretation of the residual plus component plots
+
+The residual plus component plots and the added variable plots mirror the statistics of the summary() function. Visually, we can see a decreasing trend for adult morality as adult deaths increase, suggesting that this variable plays a significant role in predicting life expectancy. We can also see an upward trend in Schooling, suggesting that as the number of years of schooling increases, the life expectancy increases, and this variable should be included in the model. 
+
+The regression coefficients that are not significant (BMI, GDP, infant deaths) are almost completely horizontal, with no increasing or decreasing trend on the response variable, suggesting they do not belong as a predictor in the model (they are not significant in the summary statistics as well). 
+```{r}
+summary(life_lm)$coefficients
+crPlots(life_lm, id=TRUE)
+avPlots(life_lm)
+
+```
+

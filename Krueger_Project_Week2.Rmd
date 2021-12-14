@@ -1,0 +1,395 @@
+---
+title: "Life Expectancy - Multiple Regression"
+author: "Kasia Krueger"
+date: "9/14/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r echo=FALSE, results='hide', warning=FALSE}
+setwd("~/Personal/School/MA4710/Project")
+lifedata <- read.csv("Life Expectancy Data_2015.csv")
+
+polio.vacc <- lifedata$Polio
+lifedata$polio.vacc <- cut(polio.vacc,3,labels = c("low", "medium", "high"))
+
+hepB.vacc <- lifedata$Hepatitis.B
+lifedata$hepB.vacc <- cut(hepB.vacc,3,labels = c("low", "medium", "high"))
+
+HIV.AIDS <- lifedata$HIV.AIDS  
+lifedata$HIV.AIDS<- cut(HIV.AIDS,3,labels = c("low", "medium", "high"))
+
+
+```
+# Week 2
+
+## Project Overview
+This analysis is concerned with the life expectancy in years based on data collected yearly by the WHO and aggregated in Kaggle.com. The data set is from 2015 and contains 173 observations (countries). 
+
+**Response Variable**: Life expectancy (in years)  
+
+**Quantitative Predictor Variables**:   
+1. Adult Mortality Index - number of adult deaths for both sexes between the ages 15-60, per 1000 people  
+2. Body Mass Index - BMI - Average Body Mass Index of entire population  
+3. GDP - Gross Domestic Product per capita (in USD)  
+4. Schooling - Number of years of school  
+5. Infant death index - Number of Infant Deaths per 1000 people  
+
+**Categorical Predictor Variables**:
+
+1. Country status:
++ Developed  
++ Developing  
+2. Polio vaccine rates among 1-year-olds (%):   
++ Low (4.91 - 36.3]  
++ Medium (36.3 - 67.7]  
++ High (67.7 - 99.1]  
+3. Hepatitis B vaccine rates among  1-year-olds (%):  
++ Low (0 - 33]  
++ Medium (33 - 66]  
++ High (66 - 99.1]  
+4. HIV/AIDS deaths per 1,000 live births HIV/AIDS (0-4 years):  
++ Low (0.0908 - 3.17]  
++ Medium (3.17 - 6.23]  
++ High (6.23 - 9.31]  
+
+## Summary
+
+```{r lifedata}
+summary(lifedata)
+```
+## 1. Create a Design matrix
+
+Give the column of 1's the name 'Intercept'
+
+```{r}
+X <- with(lifedata, cbind(1, Adult.Mortality, BMI, GDP, Schooling, infant.deaths))
+Y <- as.matrix(lifedata$Life.expectancy)
+colnames(X)<-c('Intercept','Adult.Mortality','BMI','GDP','Years in School','Infant.Mortality')
+
+```
+
+## 2. Calculate Beta-hat 
+### Using matrix algebra
+```{r echo=TRUE}
+beta.hat <- solve(crossprod(X), crossprod(X,Y))
+beta.hat
+```
+### Using lm
+```{r}
+life_lm <- lm(Life.expectancy ~ Adult.Mortality+BMI+GDP+Schooling+infant.deaths, lifedata)
+coef(life_lm)
+summary(life_lm)
+```
+
+## 3. Calculate the vectors of fitted values and residuals
+### Using matrix algebra
+```{r}
+Yhat <- X %*% beta.hat # vector of fitted values
+res <- Y - Yhat # vector of residuals
+```
+
+## 4. Calculate the residual degrees of freedom, SSE, and sigma^2 
+### Using matrix algebra
+```{r}
+SSE <- crossprod(res) 
+df <- nrow(X) - ncol(X) # this is n-(p+1), residual degrees of freedom
+sigma.sq <- SSE/df # sigma^2
+```
+### Using lm
+```{r}
+SSE.lm <- deviance(life_lm)
+df.lm <- df.residual(life_lm)
+sigma.sq.lm <- deviance(life_lm) / df.residual(life_lm)
+```
+
+
+Values        | Matrix Algebra | lm function
+------------- | -------------  |------------
+SSE           | `r SSE`          |`r SSE.lm`
+df            | `r df `          |`r df.lm`
+sigma.sq      | `r sigma.sq`     |`r sigma.sq.lm`
+
+
+## 5.  Calculate R = Cor(Y,Y-hat), R2, and R2adj
+
+```{r}
+n <- length(lifedata$Life.expectancy)
+SST <- (n-1)*var(lifedata$Life.expectancy)
+R <- cor(lifedata$Life.expectancy, fitted(life_lm))
+Rsquared <- R^2
+Rsq <- 1 - deviance(life_lm) / SST
+r.squared.adj <- 1-((n-1)/df)*(1-R^2)
+```
+Value                | Matrix Algebra            | summary(life_lm)
+---------------------| --------------------------| -------------
+R (Cor(Y,Y-hat))     | `r cor(Y,Yhat)`           | `r cor(lifedata$Life.expectancy, fitted(life_lm))`
+R^2^                 | `r R^2`                   | `r summary(life_lm)$r.squared`
+R^2^~adj~            | `r 1-((n-1)/df)*(1-R^2)`  | `r summary(life_lm)$adj.r.squared`
+
+Reduced model                                               |  Adjusted R^2^
+------------------------------------------------------------|-------------------------
+life_lm, ~ Adult.Mortality                                  | `r summary(update(life_lm, ~ Adult.Mortality))$adj.r.squared`
+life_lm, ~  Adult.Mortality+Schooling                             | `r summary(update(life_lm, ~ Adult.Mortality+Schooling))$adj.r.squared`
+life_lm, ~  Adult.Mortality+GDP+Schooling               | `r summary(update(life_lm, ~ Adult.Mortality+GDP+Schooling))$adj.r.squared`
+life_lm, ~  Adult.Mortality+GDP+Schooling+infant.deaths | `r summary(update(life_lm, ~ Adult.Mortality+GDP+Schooling+infant.deaths))$adj.r.squared`
+
+After removing BMI from the model, when we add infant.deaths to this model (already containing the predictors Adult.Mortality+GDP+Schooling), R^2^~adj~ ended up decreasing by a bit. We could take this as a sign that we may be starting to overfit the model by including infant.deaths as a predictor.
+
+```{r echo=FALSE}
+#plot(Y ~ fitted(life_lm), lifedata)
+```
+
+
+## 6. Calculate the F-statistic in the test of overall regression 
+
+$(H0: Beta1=Beta2=Beta3=Betap=0 against Ha:not H0)$ and its associated $p-value$
+```{r}
+life0 <- update(life_lm, ~ 1) # reduced model with no predictors
+SSE.full <- deviance(life_lm)
+SSE.reduced <- deviance(life0)
+df.full <- df.residual(life_lm)
+df.reduced <- df.residual(life0)
+F.stat <- ((SSE.reduced - SSE.full) / (df.reduced-df.full)) / (SSE.full/df.full)
+p.value <- pf(F.stat, df.reduced-df.full, df.full, lower.tail=FALSE)
+```
+F.stat | p.value
+------------- | -------------
+`r F.stat`  | `r p.value`
+
+With such a small p-value, we will soundly reject H0 (the reduced model is adequate) in favor of Ha (the full model is adequate).
+## Confirming with anova and lm:
+```{r}
+anova(life0, life_lm)
+summary(life_lm)$fstatistic
+
+```
+
+## 7. Calculate the covariance matrix Cov(Beta-hat) and the standard errors of each of the regression coefficients Beta-hat~j~
+```{r}
+beta.Cov.unscaled <- summary(life_lm)$cov.unscaled
+beta.Cov.unscaled
+sigma.hat <- summary(life_lm)$sigma
+sigma.hat
+var.beta <- sigma.hat^2 * diag(beta.Cov.unscaled)
+var.beta
+se.beta <- sqrt(var.beta)
+se.beta
+```
+
+## 8. Calculate the value of the t-statistic and the p-value for each of the p+1 tests H0:Beta~j~=0 against Ha:Beta~j~Beta0, j=0,1,.,p
+```{r}
+df <- df.residual(life_lm)
+t.quantile <- qt(0.95, df) # need 95th percentile for 90% confidence interval
+se.beta1 <- se.beta[2] # first entry in se.beta corresponds to beta_0, not beta_1
+beta1.hat <- coef(life_lm)[2] # point estimate of beta_1
+beta1.hat + c(-1,1) * t.quantile * se.beta1
+
+```
+Confirming t-statistic interval of B~1~ and each of the p+1 tests with lm:
+```{r}
+confint(life_lm, level=0.90)
+```
+
+BMI, GDP, and Infant deaths coefficients are not significant. 
+    
+## 9. Create a matrix of five "extra observations" for prediction purposes, and calculate the predicted value of the response for these five observations, along with 95% prediction intervals
+
+Life expectancy for a country with 5/1000 adult mortality deaths, average BMI of 20, $100,000 USD GDP per capita, 18 years of schooling and 0 infant deaths:
+
+```{r echo=FALSE}
+newcountry <- data.frame(Adult.Mortality=5, BMI=20, GDP=100000, Schooling=18, infant.deaths=0)
+predict(life_lm, newcountry, interval='prediction',level = 0.95)
+
+```
+
+
+Life expectancy for a country with 5/1000 adult mortality deaths, average BMI of 30, $100,000 USD GDP per capita, 18 years of schooling and 0 infant deaths:
+
+```{r echo=FALSE}
+newcountry$BMI <- 30
+predict(life_lm, newcountry, level = 0.95)
+```
+
+Life expectancy for a country with 5/1000 adult mortality deaths, average BMI of 30, $50,000 USD GDP per capita, 18 years of schooling and 0 infant deaths:
+
+```{r echo=FALSE}
+newcountry$GDP <- 50000
+predict(life_lm, newcountry, level = 0.95)
+```
+
+Life expectancy for a country with 5/1000 adult mortality deaths, average BMI of 30, $50,000 USD GDP per capita, 12 years of schooling and 0 infant deaths:
+
+```{r echo=FALSE}
+newcountry$Schooling <- 12
+predict(life_lm, newcountry, level = 0.95)
+
+```
+
+Life expectancy for a country with 5/1000 adult mortality deaths, average BMI of 30, $50,000 USD GDP per capita, 12 years of schooling and 5/1000 infant deaths:
+
+```{r echo=FALSE}
+newcountry$infant.deaths <- 5
+predict(life_lm, newcountry, level = 0.95)
+```
+
+
+## 10. Perform a hypothesis test to test if a subset of two + of the coefficientsare equal to 0 
+### H~0~:BMI=GDP=0, H~A~: not H~0~
+```{r}
+life.reduced <- update(life_lm, ~ BMI + GDP)
+anova(life.reduced, life_lm)
+```
+
+### H~0~:Adult.Mortality=Schooling=infant.deaths=0, H~A~: not H~0~
+```{r}
+life.reduced1 <- update(life_lm, ~ Adult.Mortality + Schooling +infant.deaths)
+anova(life.reduced1, life_lm)
+```
+
+```{r}
+summary(life.reduced1)$r.squared
+```
+
+
+```{r}
+summary(life_lm)$r.squared
+
+```
+
+```{r}
+summary(update(life_lm, ~ GDP+BMI))$r.squared
+```
+
+
+## 11 Perform a hypothesis test where the reduced model has one or more of the regression coefficients equal to some specific value ### H~0~:Schooling=4 against H~a~:Schooling not equal 4
+
+```{r}
+library(car)
+library(carData)  # for linearhypothesis test   
+life.full <- lm(Y ~ Adult.Mortality+Schooling+BMI, lifedata)
+linearHypothesis(life.full, c(0, 0, 1, 0), 4)
+```
+## 12 Perform a hypothesis test where some constraint is imposed on two or more of the predictors 
+### H~0~:Adult.Mortality+0.5*Schooling, H~A~: not H~0~
+```{r}
+life.full <- lm(Y ~ Adult.Mortality+Schooling+ BMI +GDP +infant.deaths, lifedata)
+
+life.reduced1 <- lm(Y ~ I(Adult.Mortality+0.5*Schooling) - BMI - GDP - infant.deaths, lifedata)
+
+anova(life.reduced1, life.full)
+
+```
+# Report
+## 1. Response and Predictor Variables
+The response variable for this data set is the adult mortality in years. This data set consists of five numeric predictor variables, Adult mortality, infant deaths, BMI, GDP per capita (in U.S. dollars), and number of years of schooling.  
+There are 4 qualitative predictor variables: status (developed, developing), polio inoculation rate (low, medium, high), hepatitis B inoculation rate (low, medium high), and HIV/AIDS illness rate (low, medium, high) that are not included in this week's regression analysis. 
+
+I expect BMI to have a significant effect on life expectancy. 
+
+## 2. Estimated Regression Equation
+```{r echo=FALSE}
+beta.hat
+```
+
+The estimated regression equation is:  
+*Life expectancy = 57.65 years - 0.036 adult mortality index 0.0072 BMI + 0.00004 GDP per capita + 1.47 years of schooling - 0.00204 infant mortality index.*
+
+The intercept of 57.65 years represents the life expectancy if all the predictor variables were zero. 
+
+## 3. Table of the T-statistics, Standard Errors, and P-values
+```{r}
+summary(life_lm)
+confint(life_lm, level=0.90)
+```
+
+
+
+The f-test returned a value of 144.8637142, and a p-value of *8.0216452 x 10^-59^*, indicating at least one of the predictor variables influences the response variable. 
+
+## 4. Interpretation of Each of the Significant Regression Coefficients
+
+```{r}
+summary(life_lm)
+```
+BMI, GDP, and infant deaths are not significant.
+
+**Intercept:** 57.65. If all predictor variables are zero, the predicted life expectancy is 57.65 years.  
+**Adult mortality index:** - 0.036. For every 1/1000 adult deaths (ages 15-60), the life expectancy decreases by 0.036 years.  
+**Years of schooling:** 1.47. For every one year increase in schooling, life expectancy increases by 1.47 years. 
+
+
+## 5. F-statistic and Associated P-value in the Test of Overall Regression, Sigma.sq
+
+F.stat | p.value
+------------- | -------------
+`r F.stat`  | `r p.value`
+
+With such a small p-value, we will soundly reject H0 (the reduced model is adequate) in favor of Ha (the full model is adequate).
+
+## 6. Descriptive Interpretation of Sigma.sq and R.sq
+Sigma squared quantifies how much the responses (y) vary around the regression line. Sigma squared is measured at 12.15, indicating the predicted life expectancy differs from the actual life expectancy by 12.15 years.  
+
+R-squared measures how much of the variability in the model is explained by the dependent variables. This linear model has a R^2^ value of 81.26%, indicating that 81% of the variability in the model can be explained by the dependent variables. 
+
+## 7. Other Hypothesis Tests
+
+### Hypothesis test of a subset of two or more predictors equal to 0
+
+H~0~:BMI=GDP=0, H~A~: not H~0~  
+```{r}
+life.reduced <- update(life_lm, ~ BMI + GDP)
+anova(life.reduced, life_lm)
+```
+
+The p-value for this hypothesis test is quite small, suggesting we should reject H0 and use the full model or at least, not this reduced model.  
+
+ 
+
+### H~0~:Adult.Mortality=Schooling=infant.deaths=0, H~A~: not H~0
+```{r}
+life.reduced1 <- update(life_lm, ~ Adult.Mortality + Schooling +infant.deaths)
+anova(life.reduced1, life_lm)
+```
+
+The p-value for this hypothesis test is quite large (0.2513), suggesting we should retain H0 and stay with the reduced model
+```{r}
+summary(life.reduced1)$r.squared
+```
+
+81% of the variability in the response is explained by the predictors Adult.Mortality + Schooling+infant.deaths
+```{r}
+summary(life_lm)$r.squared
+
+```
+81.3% of the variability in the response is explained by all 5 predictors, then we can view the difference of 0.4% as the percentage of the variability in the response that is explained by the predictors GDP+infant.deaths when adjusting for Adult.Mortality + Schooling+infant.deaths.This illustrates that the predictors Adult.Mortality + Schooling+infant.deaths are doing the bulk of the work in reducing the unexplained variability in the response
+```{r}
+summary(update(life_lm, ~ GDP+BMI))$r.squared
+```
+About 35.66% of the observed variability in the response is jointly explained by the predictors GDP+BMI (this number comes from a model where Adult.Mortality + Schooling+infant.deaths do not enter as predictors) only 0.4%  of the observed variability in the response is jointly explained by the predictors GDP+BMI after adjusting for the effects of Adult.Mortality + Schooling+infant.deaths. That is, the set (GDP+BMI) is better than nothing when it comes to predicting Y, when we are already predicting Y with Adult.Mortality + Schooling+infant.deaths then these extra 2 predictors provide very little
+
+
+### Hypothesis test of a predictor (or several) are equal to a specific non-zero value
+
+### H~0~:Schooling=4 against H~a~:Schooling not equal 4
+
+```{r}
+life.full <- lm(Y ~ Adult.Mortality+Schooling+BMI, lifedata)
+linearHypothesis(life.full, c(0, 0, 1, 0), 4)
+```
+The small p-value shows there is significant evidence to reject H~0~ and conclude Schooling does not equal 4.
+
+### Hypothesis test of testing a linear constraint on a subset of predictors
+
+### H~0~:Adult.Mortality+0.5*Schooling, H~A~: not H~0~
+```{r}
+life.full <- lm(Y ~ Adult.Mortality+Schooling+ BMI +GDP +infant.deaths, lifedata)
+
+life.reduced1 <- lm(Y ~ I(Adult.Mortality+0.5*Schooling) - BMI - GDP - infant.deaths, lifedata)
+
+anova(life.reduced1, life.full)
+
+```
+The conclusion is to reject H0, since there is significant evidence of an observed difference, in terms of predicting the response, between the reduced and full models.

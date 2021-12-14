@@ -1,0 +1,259 @@
+---
+title: "Life Expectancy - Transformations and Weighted Least Squares"
+author: "Kasia Krueger"
+date: "10/08/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('car')
+library('olsrr')
+#library('rgl')
+setwd("~/Personal/School/MA4710/Project")
+lifedata <- read.csv("Life Expectancy Data_2015.csv",row.names=1)
+
+polio.vacc <- lifedata$Polio
+lifedata$polio.vacc <- cut(polio.vacc,3,labels = c("1", "2", "3"))
+
+HIV.AIDS <- as.numeric(lifedata$HIV.AIDS)  
+lifedata$HIV.AIDS<- cut(HIV.AIDS,3,labels = c("1", "2", "3"))
+
+```
+
+
+
+# Week 5
+
+## Cleaning up data
+Removing high influential points (errors in years of schooling as found in Week 3 Regression diagnostics.)
+```{r}
+lifedata <- lifedata[-which(rownames(lifedata) == "Burkina Faso"),] 
+#Possible error in years of schooling (26)
+lifedata <- lifedata[-which(rownames(lifedata) == "Equatorial Guinea"),] 
+#Possible error in years of schooling (32)
+lifedata <- lifedata[-which(rownames(lifedata) == "Cuba"),] 
+#Error in years of schooling (92)
+lifedata <- lifedata[-which(rownames(lifedata) == "Eritrea"),] 
+# Error in years of schooling (255)
+lifedata <- lifedata[-which(rownames(lifedata) == "India"),] 
+#High cook's distance + possible error in infant deaths (800/1000)
+```
+
+```{r}
+lifedata$polio.vacc <- as.factor(lifedata$polio.vacc)
+lifedata$HIV.AIDS <- as.factor(lifedata$HIV.AIDS)
+lifedata$Status <- as.factor(lifedata$Status)
+
+levels(lifedata$polio.vacc) <- c('low', 'medium', 'high')
+levels(lifedata$HIV.AIDS) <- c('low', 'medium', 'high')
+```
+
+## Base Model 
+```{r}
+life.lm <- lm(Life.expectancy ~ Adult.Mortality 
+              + Schooling 
+              + BMI + GDP 
+              + infant.deaths 
+              + polio.vacc 
+              + HIV.AIDS 
+              + Status, lifedata)
+scatterplotMatrix(~Adult.Mortality+BMI+GDP+Schooling+infant.deaths,lifedata, smooth=FALSE)
+
+summary(life.lm)
+hist(rstandard(life.lm), probability=TRUE)
+par(mfrow=c(2,2))
+plot(life.lm)
+shapiro.test(rstandard(life.lm))
+ncvTest(life.lm)
+residualPlots(life.lm, type="rstandard")
+```
+
+# Summary: Base Model and Diagnostics
+
+The scatterplot matrix shows there are non-linear relationship issues with infant deaths, as well as with GDP. Adult mortality and years of schooling appear to have a strong linear relationship, as well as with BMI and years of schooling. 
+
+## Homoscedastcity
+
+The standardized residuals plots and scale-location plot show that the homoscedasticity assumptions appear to be met, as the residuals are scattered evenly around 0. The Breusch-Pagan test has a p-value of 0.15, suggesting this test matches the visual of homoscedasticity. 
+
+## Normality
+The histogram appears to be left-skewed with large outliers up to -4. The QQ-plot appears to have heavy tails and that the data set is not normal. The small p-value in the Shapiro-Wilk test confirms this. However, the observations in GDP appear to be right-skewed. 
+
+## Linearity 
+The linearity assumption appears to be met for the coefficients, with the exception of Adult.mortality, which appears to have a quadratic response. The residuals vs. fitted values plot appears to be nearly horizontal, indicating linearity in the model.  
+
+## Influential Observations
+
+There do not appear to be influential observations. The 'Residuals vs Leverage' plot shows no observations over 0.5. 
+
+
+To address the linearity assumptions in the model, we test the response and the predictor variables
+
+# Addressing Assumption Violations
+## Test response transformation
+```{r}
+invResPlot(life.lm)
+```
+### Lambda near 1 suggests no transformation is needed on the response.
+
+
+## Test adult mortality predictor transformation
+```{r}
+invTranPlot(Life.expectancy~Adult.Mortality, lifedata)$lambda
+```
+### Lambda near 2 suggests adding a quadratic term, I(X^2), to the model
+```{r}
+life.lm2 <- lm(Life.expectancy ~ Adult.Mortality+ I(Adult.Mortality^2) + Schooling + BMI + GDP + infant.deaths + polio.vacc + HIV.AIDS, lifedata)
+summary(life.lm2)
+residualPlots(life.lm2, type="rstandard")
+```
+Adding a quadratic term to the model appears to improve the linearity assumption for adult mortality. 
+
+## Test schooling predictor transformation
+```{r}
+invTranPlot(Life.expectancy~Schooling, lifedata)$lambda
+```
+### Lambda near 1 suggests no transformation is needed on the predictor
+
+## Test BMI predictor transformation
+```{r}
+invTranPlot(Life.expectancy~BMI, lifedata)$lambda
+```
+
+### Lambda near 2 suggests adding a quadratic term, I(X^2), to the model
+```{r}
+life.lm3 <- lm(Life.expectancy ~ Adult.Mortality+I(Adult.Mortality^2) + Schooling + BMI+I(BMI^2) + GDP + infant.deaths + polio.vacc + HIV.AIDS, lifedata)
+summary(life.lm3)
+residualPlots(life.lm3, type="rstandard")
+
+```
+Adding a quadratic term to the model appears to improve the linearity assumption for adult BMI.
+
+
+## Test GDP predictor transformation
+```{r}
+invTranPlot(Life.expectancy~GDP, lifedata)$lambda
+```
+### Lambda near 0 suggests trying a logarithmic transformation on the predictor
+```{r}
+life.lm4 <- lm(Life.expectancy ~ Adult.Mortality+I(Adult.Mortality^2) + Schooling + BMI+I(BMI^2) + log(GDP) + infant.deaths + polio.vacc + HIV.AIDS, lifedata)
+summary(life.lm4)
+residualPlots(life.lm4, type="rstandard")
+
+```
+
+Test not done on infant deaths since there are values of zero. 
+
+## Removing insignificant predictors from model and adding interactions to the model:
+```{r}
+life.reduced <- update(life.lm4, ~.   
+                       + I(Adult.Mortality^2):polio.vacc
+                       + I(Adult.Mortality^2):Status
+                       + I(Adult.Mortality^2):HIV.AIDS
+                       + Schooling:polio.vacc
+                       + Schooling:Status
+                       + Schooling:HIV.AIDS
+                       + HIV.AIDS:polio.vacc
+                       - Adult.Mortality
+                       - BMI
+                       - I(BMI^2) 
+                       - log(GDP) 
+                       - infant.deaths 
+                       - polio.vacc
+                       - HIV.AIDS)
+
+summary(life.reduced)
+
+```
+###  Small p-value (< 2.2e-16) suggests interaction effects need to stay in the model. 
+### Now, we choose which interaction effects need to stay in the model.
+
+```{r}
+life.reduced1 <- update(life.reduced, ~ . - I(Adult.Mortality^2):polio.vacc)
+anova(life.reduced1, life.reduced)$`Pr(>F)`
+```
+
+###  Large p-value (0.305786) suggests we can remove I(Adult.Mortality^2):polio.vacc from model.
+
+```{r}
+life.reduced2 <- update(life.reduced1, ~ . - I(Adult.Mortality^2):HIV.AIDS)
+anova(life.reduced2, life.reduced1)$`Pr(>F)`
+```
+
+###  Small p-value (7.937699e-05) suggests we need to keep I(Adult.Mortality^2):HIV.AIDS in the model.
+
+```{r}
+life.reduced3 <- update(life.reduced1, ~ . - Schooling:Status)
+anova(life.reduced3, life.reduced1)$`Pr(>F)`
+```
+
+###  Small p-value (0.0005545418) suggests we need to keep Schooling:Status in the model.
+
+```{r}
+life.reduced4 <- update(life.reduced1, ~ . - Schooling:HIV.AIDS)
+anova(life.reduced4, life.reduced1)$`Pr(>F)`
+```
+
+###  Small p-value (6.212583e-06) suggests we need to keep Schooling:HIV.AIDS from model.
+
+```{r}
+life.reduced5 <- update(life.reduced1, ~ . - HIV.AIDS:polio.vacc)
+anova(life.reduced5, life.reduced1)$`Pr(>F)`
+```
+
+###  Large p-value (0.312771) suggests we can remove HIV.AIDS:polio.vacc from model.
+
+```{r}
+life.reduced6 <- update(life.reduced5, ~ . - Schooling:polio.vacc)
+anova(life.reduced6, life.reduced5)$`Pr(>F)`
+
+```
+
+###  Small p-value (0.006823202) suggests we need to keep Schooling:polio.vacc in the model.
+
+# Diagnostics for Final Model:
+```{r}
+summary(life.reduced5)
+par(mfrow=c(2,2))
+plot(life.reduced5)
+shapiro.test(rstandard(life.reduced5))
+ncvTest(life.reduced5)
+par(mfrow=c(1,1))
+hist(rstandard(life.reduced5), probability=TRUE)
+residualPlots(life.reduced5, id=TRUE, quadratic=TRUE, type='rstandard', tests=FALSE)
+```
+
+
+# Summary: Final Model and Diagnostics
+
+## Homoscedastcity
+
+The standardized residuals plots and scale-location plot show that the homoscedasticity assumptions appear to be met, as the residuals are scattered evenly around 0. The Breusch-Pagan test has a p-value of 0.83359, suggesting this test matches the visual of homoscedasticity. 
+
+## Normality
+The histogram looks normally distributed. The QQ-plot appears to be normal with no heavy tails. The large p-value in the Shapiro-Wilk test (p-value = 0.4801) confirms this.
+
+## Linearity 
+The linearity assumption appears to be met for the coefficients. The residuals vs. fitted values plot appears to be nearly horizontal, indicating linearity in the model.  
+
+## Influential Observations
+
+There do not appear to be influential observations. The 'Residuals vs Leverage' plot shows no observations over 0.5. 
+
+## R^2^,  adjusted R^2^, sigma-hat
+## Base Model
+```{r}
+summary(life.lm)$r.squared  
+summary(life.lm)$adj.r.squared 
+summary(life.lm)$sigma
+```
+
+## Final Model
+```{r}
+summary(life.reduced5)$r.squared
+summary(life.reduced5)$adj.r.squared
+summary(life.reduced5)$sigma
+```
+ 
+The model improved overall from the base model, with an improvement to the   adjusted R^2^ value, meaning there was not a "penalty" for adding the additional interactions to the model, as well as a reduction of the standard error, resulting in a more accurate model. R^2^ improved as well, solely due to the addition of the interactions. 

@@ -1,0 +1,184 @@
+---
+title: "Life Expectancy - Categorical Variables as Predictors"
+author: "Kasia Krueger"
+date: "9/22/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('car')
+library('olsrr')
+#library('rgl')
+setwd("~/Personal/School/MA4710/Project")
+lifedata <- read.csv("Life Expectancy Data_2015.csv",row.names=1)
+
+polio.vacc <- lifedata$Polio
+lifedata$polio.vacc <- cut(polio.vacc,3,labels = c("1", "2", "3"))
+
+HIV.AIDS <- as.numeric(lifedata$HIV.AIDS)  
+lifedata$HIV.AIDS<- cut(HIV.AIDS,3,labels = c("1", "2", "3"))
+```
+Removing high influential points (errors in years of schooling and infant deaths as found in Week 3 Regression diagnostics.)
+```{r}
+ 
+lifedata <- lifedata[-which(rownames(lifedata) == "Burkina Faso"),] #Probable error in years of schooling (26)
+lifedata <- lifedata[-which(rownames(lifedata) == "Equatorial Guinea"),] #Probable error in years of schooling (32)
+lifedata <- lifedata[-which(rownames(lifedata) == "Cuba"),] #Error in years of schooling (92)
+lifedata <- lifedata[-which(rownames(lifedata) == "Eritrea"),] # Error in years of schooling (255)
+lifedata <- lifedata[-which(rownames(lifedata) == "India"),] #Probable error in infant deaths (800/1000)
+```
+
+
+# Week 4
+
+# 1. Fit the multiple regression model
+### Using two categorical predictors and 2-3 numerical predictors, and include all pairwise interaction terms
+```{r}
+
+lifedata$polio.vacc <- as.factor(lifedata$polio.vacc)
+lifedata$HIV.AIDS <- as.factor(lifedata$HIV.AIDS)
+lifedata$Status <- as.factor(lifedata$Status)
+
+
+levels(lifedata$polio.vacc) <- c('low', 'medium', 'high')
+levels(lifedata$HIV.AIDS) <- c('low', 'medium', 'high')
+
+model.trtplusint <- lm(Life.expectancy ~ Adult.Mortality + Schooling 
+                    + Status   + polio.vacc + HIV.AIDS + Adult.Mortality:polio.vacc 
+                    +Adult.Mortality:Status + Schooling: Status
+                       + Adult.Mortality:HIV.AIDS + polio.vacc:HIV.AIDS 
+                       + Schooling:polio.vacc + Schooling:HIV.AIDS
+                    ,lifedata)
+
+model.trtnoint <- update(model.trtplusint,~ . 
+                         -Adult.Mortality:Status
+                         -Schooling:Status
+                         -  Adult.Mortality:polio.vacc 
+                         - Adult.Mortality:HIV.AIDS 
+                         - polio.vacc:HIV.AIDS 
+                         - Schooling:polio.vacc 
+                         - Schooling:HIV.AIDS)
+summary(model.trtplusint)
+anova(model.trtnoint, model.trtplusint)$`Pr(>F)`
+```
+###  Small p-value (1.378884e-05) suggests interaction effects need to stay in the model. 
+# 2. Investigating the p-values associated with each interaction term
+### Now, we choose which interaction effects need to stay in the model.
+
+```{r}
+
+mod1.lm <- update(model.trtplusint, ~ . - polio.vacc:HIV.AIDS)
+anova(mod1.lm, model.trtplusint)$`Pr(>F)`
+
+```
+###  Large p-value (0.12852) suggests we can remove polio.vacc:HIV.AIDS from model.
+```{r}
+
+mod2.lm <- update(mod1.lm, ~ . - Adult.Mortality:HIV.AIDS)
+anova(mod2.lm, mod1.lm)$`Pr(>F)`
+
+```
+### Small p-value (0.000334) suggests Adult.Mortality:HIV.AIDS needs to stay in the model. 
+```{r}
+mod3.lm <- update(mod1.lm, ~ . - Schooling:HIV.AIDS)
+anova(mod3.lm, mod1.lm)$`Pr(>F)`
+
+```
+### Small p-value (0.04002) suggests Schooling:HIV.AIDS needs to stay in model.
+```{r}
+mod4.lm <- update(mod1.lm, ~ . - Adult.Mortality:HIV.AIDS)
+anova(mod4.lm, mod1.lm)$`Pr(>F)`
+```
+### Small p-value (0.000334) suggests we need to keep Adult.Mortality:HIV.AIDS in the model.
+
+```{r}
+mod5.lm <- update(mod1.lm, ~ . - Adult.Mortality:Status)
+anova(mod5.lm, mod1.lm)$`Pr(>F)`
+```
+### Small p-value (0.04279) suggests we need to keep Adult.Mortality:Status in the model.
+
+```{r}
+mod6.lm <- update(mod1.lm, ~ . - Schooling:Status)
+anova(mod6.lm, mod1.lm)$`Pr(>F)`
+```
+### Small p-value (0.01918) suggests we need to keep Schooling:Status in the model.
+
+Our conclusion is to use mod1.lm. 
+```{r}
+summary(mod1.lm)
+```
+
+
+
+# 3. Create a set of diagnostic plots and interpret them
+```{r warning=FALSE}
+hist(rstandard(mod1.lm), probability=TRUE)
+par(mfrow=c(2,2))
+plot(mod1.lm)
+car::residualPlots(mod1.lm, id=TRUE, quadratic=TRUE, type='rstandard', tests=FALSE)
+ols_plot_resid_lev(mod1.lm)
+
+```
+
+## Homoscedastcity
+
+The standardized residuals plots and scale-location plot show that the homoscedasticity assumptions appear to be met, as the residuals are scattered evenly around 0. 
+
+## Normality
+The QQ-plot shows the normality assumption is met, with no heavy tails. 
+
+## Linearity 
+The linearity assumption appears to be met for the coefficients, with the exception of Adult.mortality, which appears to have a quadratic response. The residuals vs. fitted values plot appears to be nearly horizontal, indicating linearity in the model.  
+
+## Influential Observations
+
+There are a few  outliers that indicate an influential observation that can be removed as can be seen in the Residuals vs. Leverage plot and Outlier and Leverage Diagnostics plot. Zimbabwe and Madagascar appear to occur more than once as residual outliers.
+
+
+# 4. Interpret the presence of any interaction terms in the model
+```{r}
+summary(mod1.lm)
+
+```
+
+- Beta0 is the intercept term and represents the life expectancy (124.03 years) if all other coefficients are zero. 
+- Beta1 is the slope attached to the predictor Adult Mortality, and decreases by 0.131 years for ever 1/1000 Adult deaths (ages 15-60)
+- Beta2 is the slope attached to the predictor Schooling and represents a decrease of 2.43 years for every 1 year of schooling completed.
+- Beta3 is the treatment effect associated with the status of a country (developed or developing). -17.72 years represents the life expectancy differential for developing countries relative to developed countries. 
+- Beta4 is the treatment effect associated with a country having low, medium, or high rates of vaccination for polio among 1 year olds. -53.80 years for medium rates and -45.21 years for high rates represents the life expectancy differential for low vaccination rates relative to high or medium rates (both these coefficients have high standard errors). 
+- Beta5 is the treatment effect associated with a country having low, medium, or high rates of HIV/AIDS. -8.16 years for medium rates and  -51.00 years for high rates represents the life expectancy differential for low HIV/AIDS rates relative to high or medium rates (with a high standard error for the HIV/AIDS "high" differential).
+- Beta6 represents the interaction between Adult Mortality and vaccination for polio and the differential for low vaccination rates relative to high or medium rates.
+- Beta7 represents the interaction between Adult Mortality and Status (Developing) and the differential for life expectancy in developing countries relative to developed countries 
+-Beta8 represents the interaction between Schooling and Status (Developing) and the differential for life expectancy in developing countries relative to developed countries 
+-Beta9 represents the interaction between Adult Mortality and HIV.AIDS and the differential for low HIV/AIDS rates relative to high or medium rates.
+- Beta10 represents the interaction between Schooling and vaccination for polio and the differential for low vaccination rates relative to high or medium rates.
+- Beta11 represents the interaction between Schooling and HIV/AIDS rates and the differential for low HIV/AIDS rates relative to high or medium rates.
+
+With the addition of so many predictor variables, the intercept jumped to 124 years of life expectancy; however, this also explains why so many of the predictor variables are negative that were once positive (e.g., years of schooling having a negative effect on life expectancy). 
+
+
+# 5. Collapsing Categories
+
+```{r}
+lifedata$polio.AIDS<- interaction(lifedata$polio.vacc
+                                  , lifedata$HIV.AIDS)
+polio.AIDS <- lifedata$polio.AIDS
+
+model.diffint <- lm(Life.expectancy ~ Adult.Mortality + Schooling + polio.AIDS, lifedata) # "diffint" for "different intercepts"
+```
+
+
+```{r}
+summary(model.diffint)
+newpolio.AIDS <- lifedata$polio.AIDS
+levels(newpolio.AIDS)[c(4,7)] <- 'High Mortlality' #low.medium, low.high
+model.red <- update(model.diffint, ~ . -polio.AIDS + newpolio.AIDS)
+summary(model.red)
+anova(model.red, model.diffint)$`Pr(>F)`
+linearHypothesis(model.diffint, 'polio.AIDSlow.medium = polio.AIDSlow.high ')
+```
+Creating an interaction between polio vaccination rates (low, medium, high) and HIV/AIDS rates (low, medium, high) and assigning "high mortality" to "low.medium and low.high" meaning low  polio vaccination rates and medium and high rates of HIV/AIDS deaths. 
+
+We see from the large p-value (0.1648) that suggests collapsing the categories does not work for the model. This is confirmed by the linearHypothesis test.
+
